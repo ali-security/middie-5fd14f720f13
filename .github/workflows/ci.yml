@@ -1,18 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches:
-     - main
-     - next
-     - 'v*'
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional node --test name pattern; empty runs the full suite'
+        required: false
+        default: ''
+        type: string
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
@@ -24,10 +19,79 @@ permissions:
 
 jobs:
   test:
-    permissions:
-      contents: write
-      pull-requests: write
-    uses: fastify/workflows/.github/workflows/plugins-ci.yml@v6
-    with:
-      license-check: true
-      lint: true
+    name: Test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22', '24']
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          check-latest: true
+          node-version: ${{ matrix.node-version }}
+
+      - name: Pin npm registry to release-date time machine
+        shell: bash
+        run: |
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken=2026-04-16T03:42:23.530Z
+
+      - name: Install dependencies
+        run: npm i --ignore-scripts
+
+      - name: Run tests
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            node --test --test-name-pattern="${{ inputs.test-filter }}"
+          else
+            npm test
+          fi
+
+  pack:
+    name: Pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 24.14.0
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.14.0'
+
+      - name: Pin npm registry to release-date time machine
+        shell: bash
+        run: |
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken=2026-04-16T03:42:23.530Z
+
+      - name: Install npm 11.9.0
+        run: npm i -g npm@11.9.0
+
+      - name: Install dependencies
+        run: npm i --ignore-scripts
+
+      - name: Pack
+        run: |
+          npm pack
+          mv fastify-middie-9.3.2.tgz middie-9.3.2.tgz
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: middie-tgz
+          path: middie-*.tgz
+          if-no-files-found: error
