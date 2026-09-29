@@ -517,3 +517,122 @@ test('if the function calls res.end the iterator should stop / 2', t => {
 
   instance.run(req, res)
 })
+
+test('should resolve an absolute-form target without a path to root', t => {
+  t.plan(3)
+
+  const instance = middie(function (err, req) {
+    t.assert.ifError(err)
+    t.assert.strictEqual(req.url, 'http://example.test')
+  })
+
+  instance.use('/', function (req, _res, next) {
+    t.assert.strictEqual(req.url, '/')
+    next()
+  })
+
+  instance.run({ url: 'http://example.test' }, {})
+})
+
+test('should reject absolute-form targets with an empty authority', t => {
+  t.plan(2)
+
+  const instance = middie(function (err) {
+    t.assert.ok(err)
+    t.assert.strictEqual(err.statusCode, 400)
+  })
+
+  instance.use(function (_req, _res, next) {
+    next()
+  })
+
+  instance.run({ url: 'http:///admin' }, {})
+})
+
+test('should reject malformed absolute-form targets', t => {
+  t.plan(2)
+
+  const instance = middie(function (err) {
+    t.assert.ok(err)
+    t.assert.strictEqual(err.statusCode, 400)
+  })
+
+  instance.use(function (_req, _res, next) {
+    next()
+  })
+
+  instance.run({ url: 'http://[invalid]/admin' }, {})
+})
+
+test('should leave unsupported and relative request targets unmatched', t => {
+  t.plan(4)
+
+  for (const url of ['ftp://example.test/admin', 'relative']) {
+    const instance = middie(function (err, req) {
+      t.assert.ifError(err)
+      t.assert.strictEqual(req.url, url)
+    })
+
+    instance.use('/admin', function (_req, _res, next) {
+      t.assert.fail('middleware should not match')
+      next()
+    })
+
+    instance.run({ url }, {})
+  }
+})
+
+test('should reject absolute-form targets that hide a path behind the query or fragment', t => {
+  const urls = [
+    'http://example.test?x/admin',
+    'http://example.test?/admin',
+    'http://example.test#x/admin',
+    'http://example.test?x#/admin'
+  ]
+  t.plan(urls.length * 2)
+
+  for (const url of urls) {
+    const instance = middie(function (err) {
+      t.assert.ok(err)
+      t.assert.strictEqual(err.statusCode, 400)
+    })
+
+    instance.use('/admin', function (_req, _res, next) {
+      next()
+    })
+
+    instance.run({ url }, {})
+  }
+})
+
+test('should resolve absolute-form targets without a path but with a query string to root', t => {
+  t.plan(3)
+
+  const instance = middie(function (err, req) {
+    t.assert.ifError(err)
+    t.assert.strictEqual(req.url, 'http://example.test?x=1')
+  })
+
+  instance.use('/', function (req, _res, next) {
+    t.assert.strictEqual(req.url, '/?x=1')
+    next()
+  })
+
+  instance.run({ url: 'http://example.test?x=1' }, {})
+})
+
+test('should match absolute-form targets with a path and a query string containing slashes', t => {
+  t.plan(3)
+
+  const instance = middie(function (err, req) {
+    t.assert.ifError(err)
+    t.assert.strictEqual(req.url, 'http://example.test/admin/panel?next=/login')
+  })
+
+  instance.use('/admin', function (req, _res, next) {
+    t.assert.strictEqual(req.url, '/panel?next=/login')
+    next()
+  })
+
+  instance.run({ url: 'http://example.test/admin/panel?next=/login' }, {})
+})
